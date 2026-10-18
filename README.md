@@ -1,6 +1,6 @@
 # OperationCopilot
 
-面向内容运营人员的商品与营销素材分析助手。Milestone 1 提供“小红书 × 零食”的模拟任务展示；Milestone 2 新增独立的 MiniMind-V、Qwen 和 RAG 验证接口。完整的 Agent 自动编排及前端对话页面仍属于 Milestone 3。
+面向内容运营人员的商品与营销素材分析助手。当前完成 Milestone 3：以“小红书 × 零食”为范围，提供 MiniMind-V、Qwen、RAG 和有界 ReAct Agent 组成的图片到文案闭环，并在 React 工作台展示工具状态与多版本文案。
 
 ## 当前能力
 
@@ -11,7 +11,9 @@
 - MiniMind-V 封装本地权重，对商品图、详情页截图和竞品图进行视觉描述与结构化提取。
 - Qwen 封装商品总结、三版小红书文案生成、内容审核。
 - 四类演示知识库（商品、品牌、平台、案例），Markdown 切分、TF-IDF 向量化与检索，RAG 问答验证接口。
-- ReAct Agent、工具注册、自动编排和真实平台发布属于后续 Milestone。
+- ReAct Agent：图片分析、知识检索、文案生成、内容审核、文案改写五类注册工具。
+- 对话任务 API：后台执行、状态轮询、结构化观察结果和失败状态。
+- 前端对话工作台：Agent 执行状态、三版文案对比和审核结果展示。
 
 ## 项目结构
 
@@ -37,6 +39,8 @@ $env:DASHSCOPE_API_KEY="你的密钥"
 # 可选：$env:MINIMIND_DEVICE="cuda"  （默认 cpu）
 uvicorn app.main:app --reload --port 8000
 ```
+
+也可以在 `backend/.env` 中设置 `DASHSCOPE_API_KEY=...`，然后用 `uvicorn app.main:app --reload --env-file .env --port 8000` 启动；不要提交 `.env` 或把密钥写进前端。适配器严格读取 `DASHSCOPE_API_KEY`，不会自动把 `LLM_API_KEY` 当作 DashScope 密钥。
 
 ### 前端
 
@@ -82,3 +86,6 @@ npm run build
 - [Milestone 2 UML](docs/milestone-2-uml.md)
 - [Prompt 设计](docs/prompts.md)
 - [RAG 知识库](docs/rag-knowledge-base.md)
+- [Milestone 3 设计说明](docs/superpowers/specs/2026-10-18-milestone-3-design.md)
+- [Milestone 3 实现计划](docs/superpowers/plans/2026-10-18-milestone-3.md)
+- [Milestone 3 UML](docs/milestone-3-uml.md)

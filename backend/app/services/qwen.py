@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from .errors import ModelOutputError
 from .prompts import PromptRegistry
-from .schemas import CopyResult, ReviewResult, SummaryResult
+from .schemas import CopyResult, ReviewResult, SummaryResult, RewriteResult
 
 
 class QwenAdapter:
@@ -44,6 +44,9 @@ class QwenAdapter:
 
     def review_copy(self, content: str, context: str = "") -> dict[str, Any]:
         return self._validated(ReviewResult, PromptRegistry.content_review(), content, context)
+
+    def rewrite_copy(self, content: str, context: str = "") -> dict[str, Any]:
+        return self._validated(RewriteResult, PromptRegistry.rewrite_copy(), content, context)
 
     def _validated(self, schema: type, system_prompt: str, content: str, context: str) -> dict[str, Any]:
         result = self.complete_json(system_prompt, f"内容：{content}\n检索证据：{context}")

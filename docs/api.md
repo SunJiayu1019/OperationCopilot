@@ -62,3 +62,17 @@
 
 参数校验 `422`，未知素材 `404`，非法图像 `400`，模型未配置 `503`，模型结构化输出不合契约 `502`。
 
+## Milestone 3 Agent API
+
+### `POST /api/chat/tasks`
+
+```json
+{"message":"分析这张商品图并生成下午茶场景文案","asset_id":"asset_xxx"}
+```
+
+`asset_id` 对图片分析类任务必填；知识问答和已有文案审核可省略。服务返回 `202` 和任务快照：`id`、`status`、`steps`、`observations`、`answer`、`error`。任务由后台在进程内执行，不持久化。
+
+### `GET /api/chat/tasks/{id}`
+
+轮询同一任务快照。`steps` 中只包含公开工具状态：`tool`、`status`、`message`、时间戳，不包含模型思维链。完成时 `observations.generate_copy.copy_variants` 为三版文案，`observations.review_copy.reviews` 为审核结果；失败时 `status=failed` 且 `error` 为面向用户的错误信息。
+

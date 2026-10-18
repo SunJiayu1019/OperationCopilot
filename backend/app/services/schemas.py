@@ -40,3 +40,8 @@ class ReviewItem(BaseModel):
 
 class ReviewResult(BaseModel):
     risks: list[ReviewItem]
+
+
+class RewriteResult(BaseModel):
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)

@@ -37,4 +37,27 @@ describe("OperationCopilot workbench", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     fetchMock.mockRestore();
   });
+
+  it("submits a chat task, shows tool progress, and compares copy variants", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/uploads")) return new Response(JSON.stringify({ asset_id: "asset_chat", filename: "snack.jpg" }), { status: 200 });
+      if (url.endsWith("/api/chat/tasks")) return new Response(JSON.stringify({ id: "chat_1", status: "pending", steps: [] }), { status: 202 });
+      return new Response(JSON.stringify({
+        id: "chat_1", status: "completed", steps: [{ tool: "analyze_image", status: "completed", message: "已完成" }],
+        observations: { generate_copy: { copy_variants: [
+          { title: "生活方式", body: "下班后的酥脆", tags: ["#下午茶"] },
+          { title: "场景种草", body: "办公室分享", tags: ["#分享"] },
+          { title: "信息清晰", body: "便携小包装", tags: ["#零食"] },
+        ] }, review_copy: { reviews: [{ risks: [] }] } },
+      }), { status: 200 });
+    });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText(/商品图片/i), { target: { files: [new File(["image"], "snack.jpg", { type: "image/jpeg" })] } });
+    fireEvent.change(screen.getByLabelText(/内容目标/i), { target: { value: "生成下午茶文案" } });
+    fireEvent.click(screen.getByRole("button", { name: /开始分析任务/i }));
+    await waitFor(() => expect(screen.getByText("生活方式")).toBeInTheDocument());
+    expect(screen.getByText("Agent 执行状态")).toBeInTheDocument();
+    fetchMock.mockRestore();
+  });
 });
