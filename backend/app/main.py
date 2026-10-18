@@ -1,8 +1,17 @@
 from pathlib import Path
 from uuid import uuid4
+from typing import Literal
+from functools import lru_cache
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from PIL import Image, UnidentifiedImageError
+
+from .services import minimind, qwen
+from .services.errors import ModelConfigurationError, ModelOutputError
+from .services.prompts import PromptRegistry
+from .services.rag import RAGService
 
 from .models import (
     AnalysisResult,
@@ -32,6 +41,31 @@ ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 assets: dict[str, dict[str, str]] = {}
 tasks: dict[str, TaskSnapshot] = {}
+rag_service = RAGService()
+KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge"
+COLLECTIONS = ("product", "brand", "platform", "cases")
+
+
+@lru_cache(maxsize=1)
+def get_visual_adapter() -> minimind.MiniMindVAdapter:
+    return minimind.MiniMindVAdapter()
+
+
+class VisualRequest(BaseModel):
+    asset_id: str = Field(min_length=1)
+    material_type: Literal["product", "detail", "competitor"]
+
+
+class TextRequest(BaseModel):
+    task: Literal["summary", "copy", "review"]
+    content: str = Field(min_length=1, max_length=10000)
+    context: str = Field(default="", max_length=15000)
+
+
+class RAGQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    collection: Literal["product", "brand", "platform", "cases"] | None = None
+    top_k: int = Field(default=3, ge=1, le=10)
 
 
 @app.get("/health")
@@ -107,3 +141,71 @@ def get_task(task_id: str) -> TaskSnapshot:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+@app.post("/api/analysis/visual")
+def analyze_visual(payload: VisualRequest) -> dict:
+    if payload.asset_id not in assets:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    try:
+        with Image.open(UPLOAD_DIR / payload.asset_id) as image:
+            image.verify()
+        adapter = get_visual_adapter()
+        def structure_description(raw: str) -> dict:
+            text_model = qwen.QwenAdapter()
+            return text_model.complete_json(PromptRegistry.visual_structuring(), f"素材类型：{payload.material_type}\n视觉描述：{raw}")
+        analysis = adapter.analyze(UPLOAD_DIR / payload.asset_id, PromptRegistry.visual_analysis(payload.material_type), structurer=structure_description)
+        return {"material_type": payload.material_type, "analysis": analysis}
+    except ModelConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ModelOutputError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except UnidentifiedImageError as error:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/api/text/generate")
+def generate_text(payload: TextRequest) -> dict:
+    try:
+        adapter = qwen.QwenAdapter()
+        methods = {"summary": adapter.summarize, "copy": adapter.generate_copy, "review": adapter.review_copy}
+        result = methods[payload.task](payload.content, payload.context)
+        return {"task": payload.task, "result": result}
+    except ModelOutputError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/api/rag/index")
+def index_knowledge() -> dict:
+    global rag_service
+    rag_service = RAGService()
+    counts = {collection: rag_service.index_directory(KNOWLEDGE_DIR / collection, collection) for collection in COLLECTIONS}
+    return {"collections": counts, "total_chunks": sum(counts.values())}
+
+
+@app.post("/api/rag/ask")
+def ask_rag(payload: RAGQuestion) -> dict:
+    evidence = rag_service.query(payload.question, collection=payload.collection, top_k=payload.top_k)
+    if not evidence:
+        return {"answer": None, "evidence": [], "message": "No matching knowledge found; index the knowledge base or revise the question."}
+    context = "\n\n".join(f"[{hit.collection}/{hit.source}] {hit.text}" for hit in evidence)
+    try:
+        adapter = qwen.QwenAdapter()
+        result = adapter.complete_json("只根据给定的检索证据回答问题，无法确认时明确说明。只输出包含 answer 字段的 JSON。", f"问题：{payload.question}\n证据：{context}")
+        answer = result.get("answer")
+        if not isinstance(answer, str) or not answer.strip():
+            raise ModelOutputError("Qwen RAG answer is missing")
+        return {"answer": answer, "evidence": [hit.__dict__ for hit in evidence]}
+    except ModelOutputError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/api/rag/query")
+def query_rag(payload: RAGQuestion) -> dict:
+    return {"hits": [hit.__dict__ for hit in rag_service.query(payload.question, collection=payload.collection, top_k=payload.top_k)]}

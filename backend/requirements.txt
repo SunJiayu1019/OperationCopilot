@@ -3,3 +3,8 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 pytest==8.3.4
 httpx==0.28.1
+openai>=1.59.6,<3
+scikit-learn>=1.5.1,<2
+Pillow>=10,<13
+torch>=2.6,<3
+transformers==4.57.6
